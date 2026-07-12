@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { useState, useEffect } from "react";
+import { ref, get } from "firebase/database";
+import { db } from "@/firebase";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Achievement {
   id: string;
@@ -18,50 +19,76 @@ interface UserAchievement {
   achievement_id: string;
   earned_at: string;
   progress: any;
-  achievement: Achievement;
+  achievement?: Achievement;
 }
 
 export const useAchievements = () => {
   const { user } = useAuth();
+
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [userAchievements, setUserAchievements] = useState<UserAchievement[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchAchievements = async () => {
+      setLoading(true);
+
       try {
-        // Fetch all active achievements
-        const { data: achievementsData, error: achievementsError } = await supabase
-          .from('achievements')
-          .select('*')
-          .eq('is_active', true)
-          .order('category, points');
+        // Load all achievements
+        const achievementsSnap = await get(ref(db, "achievements"));
 
-        if (achievementsError) {
-          console.error('Error fetching achievements:', achievementsError);
-          return;
+        let achievementsList: Achievement[] = [];
+
+        if (achievementsSnap.exists()) {
+          achievementsList = Object.entries(achievementsSnap.val()).map(
+            ([id, value]: any) => ({
+              id,
+              ...value,
+            })
+          );
+
+          achievementsList = achievementsList
+            .filter((a) => a.is_active)
+            .sort((a, b) => {
+              if (a.category === b.category) {
+                return a.points - b.points;
+              }
+              return a.category.localeCompare(b.category);
+            });
         }
 
-        setAchievements(achievementsData || []);
+        setAchievements(achievementsList);
 
-        // Fetch user's achievements if logged in
+        // Load current user's achievements
         if (user) {
-          const { data: userAchievementsData, error: userAchievementsError } = await supabase
-            .from('user_achievements')
-            .select(`
-              *,
-              achievement:achievements(*)
-            `)
-            .eq('user_id', user.id);
+          const userSnap = await get(
+            ref(db, `user_achievements/${user.uid}`)
+          );
 
-          if (userAchievementsError) {
-            console.error('Error fetching user achievements:', userAchievementsError);
+          if (userSnap.exists()) {
+            const userList: UserAchievement[] = Object.entries(
+              userSnap.val()
+            ).map(([id, value]: any) => {
+              const achievement = achievementsList.find(
+                (a) => a.id === value.achievement_id
+              );
+
+              return {
+                id,
+                ...value,
+                achievement,
+              };
+            });
+
+            setUserAchievements(userList);
           } else {
-            setUserAchievements(userAchievementsData || []);
+            setUserAchievements([]);
           }
+        } else {
+          setUserAchievements([]);
         }
-      } catch (error) {
-        console.error('Error in fetchAchievements:', error);
+      } catch (err) {
+        console.error("Error loading achievements:", err);
       } finally {
         setLoading(false);
       }
@@ -71,13 +98,21 @@ export const useAchievements = () => {
   }, [user]);
 
   const earnedAchievementIds = new Set(
-    userAchievements.map(ua => ua.achievement_id)
+    userAchievements.map((a) => a.achievement_id)
   );
 
-  const earnedAchievements = achievements.filter(a => earnedAchievementIds.has(a.id));
-  const availableAchievements = achievements.filter(a => !earnedAchievementIds.has(a.id));
+  const earnedAchievements = achievements.filter((a) =>
+    earnedAchievementIds.has(a.id)
+  );
 
-  const totalPoints = earnedAchievements.reduce((sum, a) => sum + a.points, 0);
+  const availableAchievements = achievements.filter(
+    (a) => !earnedAchievementIds.has(a.id)
+  );
+
+  const totalPoints = earnedAchievements.reduce(
+    (sum, a) => sum + a.points,
+    0
+  );
 
   return {
     achievements,
