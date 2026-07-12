@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { database } from '@/firebase';
+import { ref, onValue } from 'firebase/database';
+
 
 interface GalleryItem {
   id: string;
@@ -19,6 +21,7 @@ interface GalleryItem {
   view_count: number;
   created_at: string;
   updated_at: string;
+
   profiles?: {
     display_name?: string;
     minecraft_username?: string;
@@ -26,42 +29,130 @@ interface GalleryItem {
   };
 }
 
+
+
 export const useGallery = () => {
-  const [items, setItems] = useState<GalleryItem[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchGallery = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('gallery')
-          .select('*')
-          .eq('is_approved', true)
-          .order('created_at', { ascending: false });
+  const [items,setItems] = useState<GalleryItem[]>([]);
+  const [loading,setLoading] = useState(true);
 
-        if (error) {
-          console.error('Error fetching gallery:', error);
+
+
+  useEffect(()=>{
+
+
+    const galleryRef = ref(database,'gallery');
+
+
+    const unsubscribe = onValue(
+      galleryRef,
+      (snapshot)=>{
+
+
+        const data = snapshot.val();
+
+
+        if(!data){
+
+          setItems([]);
+          setLoading(false);
           return;
+
         }
 
-        setItems(data || []);
-      } catch (error) {
-        console.error('Error in fetchGallery:', error);
-      } finally {
+
+
+        const galleryItems:GalleryItem[] = Object.entries(data)
+
+          .map(([id,value]:any)=>({
+
+            id,
+
+            ...value
+
+          }))
+
+          .filter(
+            item => item.is_approved === true
+          )
+
+          .sort(
+            (a,b)=>
+              new Date(b.created_at).getTime()
+              -
+              new Date(a.created_at).getTime()
+          );
+
+
+
+        setItems(galleryItems);
+
         setLoading(false);
+
+
+      },
+
+      (error)=>{
+
+        console.error(
+          "Error fetching gallery:",
+          error
+        );
+
+        setLoading(false);
+
       }
-    };
 
-    fetchGallery();
-  }, []);
+    );
 
-  const getFeaturedItems = () => items.filter(item => item.is_featured);
-  const getItemsByCategory = (category: string) => items.filter(item => item.category === category);
+
+
+    return ()=>unsubscribe();
+
+
+  },[]);
+
+
+
+
+
+  const getFeaturedItems = ()=>{
+
+    return items.filter(
+      item=>item.is_featured
+    );
+
+  };
+
+
+
+
+
+  const getItemsByCategory = (
+    category:string
+  )=>{
+
+    return items.filter(
+      item =>
+      item.category === category
+    );
+
+  };
+
+
+
+
 
   return {
+
     items,
+
     loading,
+
     getFeaturedItems,
-    getItemsByCategory,
+
+    getItemsByCategory
+
   };
+
 };
