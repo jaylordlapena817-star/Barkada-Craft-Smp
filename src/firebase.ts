@@ -1,7 +1,12 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getDatabase } from "firebase/database";
-import { getFirestore } from "firebase/firestore";
+import { 
+  getAuth 
+} from "firebase/auth";
+
+import {
+  getFirestore
+} from "firebase/firestore";
+
 
 const firebaseConfig = {
   apiKey: "AIzaSyDTJFiY42avRGMqtKrZB7gPhWL-ASTRh3w",
@@ -11,13 +16,12 @@ const firebaseConfig = {
   storageBucket: "mybot-d79df.firebasestorage.app",
   messagingSenderId: "215753443154",
   appId: "1:215753443154:web:af883fb18af1d499a15c8b",
-  measurementId: "G-FYWB6LBG34"
 };
+
 
 const app = initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
-export const db = getDatabase(app);
-export const firestore = getFirestore(app);
 
-export default app;
+export const auth = getAuth(app);
+
+export const db = getFirestore(app);
