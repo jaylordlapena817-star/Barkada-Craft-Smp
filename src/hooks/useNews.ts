@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { database } from '@/firebase';
+import { ref, onValue } from 'firebase/database';
+
 
 interface NewsArticle {
   id: string;
@@ -17,6 +19,7 @@ interface NewsArticle {
   view_count: number;
   created_at: string;
   updated_at: string;
+
   profiles?: {
     display_name?: string;
     minecraft_username?: string;
@@ -24,42 +27,149 @@ interface NewsArticle {
   };
 }
 
+
+
 export const useNews = () => {
-  const [articles, setArticles] = useState<NewsArticle[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchNews = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('news_articles')
-          .select('*')
-          .eq('is_published', true)
-          .order('published_at', { ascending: false });
 
-        if (error) {
-          console.error('Error fetching news:', error);
-          return;
+  const [articles,setArticles] =
+    useState<NewsArticle[]>([]);
+
+
+  const [loading,setLoading] =
+    useState(true);
+
+
+
+
+  useEffect(()=>{
+
+
+    const newsRef =
+      ref(database,'news_articles');
+
+
+
+    const unsubscribe =
+      onValue(
+        newsRef,
+        (snapshot)=>{
+
+
+          const data =
+            snapshot.val();
+
+
+
+          if(!data){
+
+            setArticles([]);
+            setLoading(false);
+            return;
+
+          }
+
+
+
+          const newsList:NewsArticle[] =
+            Object.entries(data)
+
+            .map(([id,value]:any)=>({
+
+              id,
+
+              ...value
+
+            }))
+
+
+            .filter(
+              article =>
+              article.is_published === true
+            )
+
+
+            .sort(
+              (a,b)=>
+              new Date(b.published_at).getTime()
+              -
+              new Date(a.published_at).getTime()
+            );
+
+
+
+          setArticles(newsList);
+
+          setLoading(false);
+
+
+
+        },
+
+        (error)=>{
+
+          console.error(
+            "Error fetching news:",
+            error
+          );
+
+          setLoading(false);
+
         }
 
-        setArticles(data || []);
-      } catch (error) {
-        console.error('Error in fetchNews:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+      );
 
-    fetchNews();
-  }, []);
 
-  const getFeaturedArticles = () => articles.filter(article => article.is_featured);
-  const getArticlesByCategory = (category: string) => articles.filter(article => article.category === category);
+
+    return ()=>unsubscribe();
+
+
+
+  },[]);
+
+
+
+
+
+
+  const getFeaturedArticles = ()=>{
+
+    return articles.filter(
+      article =>
+      article.is_featured
+    );
+
+  };
+
+
+
+
+
+  const getArticlesByCategory = (
+    category:string
+  )=>{
+
+    return articles.filter(
+      article =>
+      article.category === category
+    );
+
+  };
+
+
+
+
 
   return {
+
     articles,
+
     loading,
+
     getFeaturedArticles,
-    getArticlesByCategory,
+
+    getArticlesByCategory
+
   };
+
 };
