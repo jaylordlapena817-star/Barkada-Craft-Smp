@@ -18,7 +18,6 @@ import {
   setDoc
 } from "firebase/firestore";
 
-
 import { auth, db } from "@/firebase";
 
 
@@ -27,41 +26,38 @@ interface AuthContextType {
   user: User | null;
 
   signUp: (
-    email:string,
-    password:string,
-    minecraftUsername:string,
-    displayName:string
-  ) => Promise<{error:any}>;
+    email: string,
+    password: string,
+    minecraftUsername: string,
+    displayName: string
+  ) => Promise<{ error: any }>;
 
+  signIn: (
+    email: string,
+    password: string
+  ) => Promise<{ error: any }>;
 
-  signIn:(
-    email:string,
-    password:string
-  ) => Promise<{error:any}>;
+  signOut: () => Promise<void>;
 
-
-  signOut:()=>Promise<void>;
-
-  loading:boolean;
+  loading: boolean;
 
 }
 
 
 
-const AuthContext =
-createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 
 
-export const useAuth = ()=>{
+export const useAuth = () => {
 
   const context = useContext(AuthContext);
 
 
-  if(!context){
+  if (!context) {
 
     throw new Error(
-      "useAuth must be used within AuthProvider"
+      "useAuth must be used inside AuthProvider"
     );
 
   }
@@ -77,228 +73,251 @@ export const useAuth = ()=>{
 
 export const AuthProvider = ({
   children
-}:{
-  children:React.ReactNode
-})=>{
+}: {
+  children: React.ReactNode
+}) => {
 
 
-const [user,setUser] =
-useState<User|null>(null);
+  const [user, setUser] =
+    useState<User | null>(null);
 
 
-const [loading,setLoading] =
-useState(true);
+  const [loading, setLoading] =
+    useState(true);
 
 
 
 
 
-useEffect(()=>{
+  useEffect(() => {
 
 
-const unsubscribe =
-onAuthStateChanged(
-  auth,
-  (currentUser)=>{
+    const unsubscribe =
+      onAuthStateChanged(
+        auth,
+        (currentUser) => {
 
-    setUser(currentUser);
+          setUser(currentUser);
 
-    setLoading(false);
+          setLoading(false);
 
-  }
-);
+        }
+      );
 
 
-return unsubscribe;
+    return () => unsubscribe();
 
 
-},[]);
+  }, []);
 
 
 
 
 
 
-const signUp = async(
 
-email:string,
-password:string,
-minecraftUsername:string,
-displayName:string
+  const signUp = async (
+    email: string,
+    password: string,
+    minecraftUsername: string,
+    displayName: string
+  ) => {
 
-)=>{
 
+    try {
 
-try{
 
+      const result =
+        await createUserWithEmailAndPassword(
+          auth,
+          email,
+          password
+        );
 
-const result =
-await createUserWithEmailAndPassword(
-  auth,
-  email,
-  password
-);
 
 
+      console.log(
+        "Firebase Auth Created:",
+        result.user.uid
+      );
 
 
 
-await setDoc(
 
-doc(
-  db,
-  "users",
-  result.user.uid
-),
 
+      await setDoc(
 
-{
+        doc(
+          db,
+          "users",
+          result.user.uid
+        ),
 
-uid:result.user.uid,
+        {
 
-email,
+          uid: result.user.uid,
 
-minecraft_username:
-minecraftUsername,
+          email: email,
 
+          minecraft_username:
+            minecraftUsername,
 
-display_name:
-displayName,
+          display_name:
+            displayName,
 
+          createdAt:
+            new Date()
 
-createdAt:
-new Date()
+        }
 
+      );
 
-}
 
 
-);
 
 
+      console.log(
+        "Firestore user saved"
+      );
 
 
-return {
- error:null
-};
 
+      return {
+        error: null
+      };
 
 
-}catch(error:any){
 
+    } catch (error: any) {
 
-console.error(
-  "Signup Error:",
-  error.code,
-  error.message
-);
 
+      console.error(
+        "SIGNUP ERROR:",
+        error
+      );
 
-return {
- error
-};
 
+      console.error(
+        "ERROR CODE:",
+        error.code
+      );
 
-}
 
+      console.error(
+        "ERROR MESSAGE:",
+        error.message
+      );
 
-};
 
 
+      return {
+        error
+      };
 
 
+    }
 
 
+  };
 
-const signIn = async(
 
-email:string,
-password:string
 
-)=>{
 
 
-try{
 
 
-await signInWithEmailAndPassword(
-  auth,
-  email,
-  password
-);
 
 
+  const signIn = async (
+    email: string,
+    password: string
+  ) => {
 
-return {
- error:null
-};
 
+    try {
 
 
-}catch(error:any){
+      await signInWithEmailAndPassword(
+        auth,
+        email,
+        password
+      );
 
 
-console.error(
- error.code,
- error.message
-);
 
+      return {
+        error: null
+      };
 
-return {
- error
-};
 
 
-}
+    } catch (error:any) {
 
 
-};
+      console.error(
+        "LOGIN ERROR:",
+        error.code,
+        error.message
+      );
 
 
+      return {
+        error
+      };
 
 
+    }
 
 
+  };
 
-const signOut = async()=>{
 
 
-await firebaseSignOut(auth);
 
 
-};
 
 
 
 
+  const signOut = async () => {
 
 
+    await firebaseSignOut(auth);
 
-return (
 
-<AuthContext.Provider
+  };
 
-value={{
 
-user,
 
-signUp,
 
-signIn,
 
-signOut,
 
-loading
 
-}}
+  return (
 
->
+    <AuthContext.Provider
 
-{children}
+      value={{
 
-</AuthContext.Provider>
+        user,
 
-);
+        signUp,
+
+        signIn,
+
+        signOut,
+
+        loading
+
+      }}
+
+    >
+
+      {children}
+
+    </AuthContext.Provider>
+
+  );
 
 
 };
