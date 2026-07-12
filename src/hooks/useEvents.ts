@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { database } from '@/firebase';
+import { ref, onValue, set, remove } from 'firebase/database';
+
 
 interface ServerEvent {
   id: string;
@@ -18,131 +20,299 @@ interface ServerEvent {
   created_by: string;
   created_at: string;
   updated_at: string;
-  profiles?: {
-    display_name?: string;
-    minecraft_username?: string;
-    avatar_url?: string;
-  };
   user_registered?: boolean;
 }
 
+
 export const useEvents = () => {
+
   const { user } = useAuth();
-  const [events, setEvents] = useState<ServerEvent[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchEvents = async () => {
-      try {
-        const { data: eventsData, error: eventsError } = await supabase
-          .from('server_events')
-          .select('*')
-          .eq('is_active', true)
-          .order('start_date', { ascending: true });
+  const [events,setEvents] = useState<ServerEvent[]>([]);
+  const [loading,setLoading] = useState(true);
 
-        if (eventsError) {
-          console.error('Error fetching events:', eventsError);
-          return;
-        }
 
-        let eventsWithRegistration = eventsData || [];
 
-        // Check user registration status if logged in
-        if (user && eventsData?.length) {
-          const { data: participantsData } = await supabase
-            .from('event_participants')
-            .select('event_id')
-            .eq('user_id', user.id)
-            .in('event_id', eventsData.map(e => e.id));
+  useEffect(()=>{
 
-          const registeredEventIds = new Set(participantsData?.map(p => p.event_id) || []);
+    const eventsRef = ref(database,'server_events');
 
-          eventsWithRegistration = eventsData.map(event => ({
-            ...event,
-            user_registered: registeredEventIds.has(event.id)
-          }));
-        }
 
-        setEvents(eventsWithRegistration);
-      } catch (error) {
-        console.error('Error in fetchEvents:', error);
-      } finally {
+    const unsubscribe = onValue(eventsRef,(snapshot)=>{
+
+      const data = snapshot.val();
+
+
+      if(!data){
+        setEvents([]);
         setLoading(false);
-      }
-    };
-
-    fetchEvents();
-  }, [user]);
-
-  const registerForEvent = async (eventId: string) => {
-    if (!user) return { error: 'Must be logged in to register' };
-
-    try {
-      const { error } = await supabase
-        .from('event_participants')
-        .insert({
-          event_id: eventId,
-          user_id: user.id
-        });
-
-      if (error) {
-        return { error: error.message };
+        return;
       }
 
-      // Update local state
-      setEvents(prev => prev.map(event => 
-        event.id === eventId 
-          ? { ...event, user_registered: true, current_participants: event.current_participants + 1 }
-          : event
-      ));
 
-      return { success: true };
-    } catch (error: any) {
-      return { error: error.message };
+      let list:ServerEvent[] = Object.entries(data)
+        .map(([id,value]:any)=>({
+
+          id,
+
+          ...value,
+
+          user_registered:false
+
+        }))
+        .filter(event=>event.is_active);
+
+
+
+      // Check registration
+      if(user){
+
+        const userRef = ref(
+          database,
+          `event_participants/${user.uid}`
+        );
+
+
+        onValue(userRef,(snap)=>{
+
+          const registrations = snap.val() || {};
+
+
+          list = list.map(event=>({
+
+            ...event,
+
+            user_registered:
+              registrations[event.id] === true
+
+          }));
+
+
+          setEvents(list);
+
+        },{onlyOnce:true});
+
+
+      }else{
+
+        setEvents(list);
+
+      }
+
+
+      setLoading(false);
+
+
+    });
+
+
+    return ()=>unsubscribe();
+
+
+  },[user]);
+
+
+
+
+
+  const registerForEvent = async(eventId:string)=>{
+
+
+    if(!user){
+
+      return {
+        error:'Must be logged in to register'
+      };
+
     }
+
+
+    try{
+
+
+      await set(
+
+        ref(
+          database,
+          `event_participants/${user.uid}/${eventId}`
+        ),
+
+        true
+
+      );
+
+
+
+      setEvents(prev=>
+
+        prev.map(event=>
+
+          event.id===eventId
+
+          ?
+
+          {
+            ...event,
+            user_registered:true,
+            current_participants:
+              event.current_participants+1
+          }
+
+          :
+
+          event
+
+        )
+
+      );
+
+
+
+      return {
+        success:true
+      };
+
+
+    }catch(error:any){
+
+      return {
+        error:error.message
+      };
+
+    }
+
   };
 
-  const unregisterFromEvent = async (eventId: string) => {
-    if (!user) return { error: 'Must be logged in to unregister' };
 
-    try {
-      const { error } = await supabase
-        .from('event_participants')
-        .delete()
-        .eq('event_id', eventId)
-        .eq('user_id', user.id);
 
-      if (error) {
-        return { error: error.message };
-      }
 
-      // Update local state
-      setEvents(prev => prev.map(event => 
-        event.id === eventId 
-          ? { ...event, user_registered: false, current_participants: Math.max(0, event.current_participants - 1) }
-          : event
-      ));
 
-      return { success: true };
-    } catch (error: any) {
-      return { error: error.message };
+  const unregisterFromEvent = async(eventId:string)=>{
+
+
+    if(!user){
+
+      return {
+        error:'Must be logged in to unregister'
+      };
+
     }
+
+
+    try{
+
+
+      await remove(
+
+        ref(
+          database,
+          `event_participants/${user.uid}/${eventId}`
+        )
+
+      );
+
+
+
+      setEvents(prev=>
+
+        prev.map(event=>
+
+          event.id===eventId
+
+          ?
+
+          {
+            ...event,
+            user_registered:false,
+            current_participants:
+              Math.max(
+                0,
+                event.current_participants-1
+              )
+          }
+
+          :
+
+          event
+
+        )
+
+      );
+
+
+
+      return {
+        success:true
+      };
+
+
+    }catch(error:any){
+
+      return {
+        error:error.message
+      };
+
+    }
+
   };
 
-  const getUpcomingEvents = () => events.filter(event => new Date(event.start_date) > new Date());
-  const getOngoingEvents = () => events.filter(event => {
-    const now = new Date();
-    const start = new Date(event.start_date);
-    const end = event.end_date ? new Date(event.end_date) : null;
-    return start <= now && (!end || end >= now);
-  });
+
+
+
+
+
+  const getUpcomingEvents = ()=>{
+
+    return events.filter(
+      event =>
+      new Date(event.start_date) > new Date()
+    );
+
+  };
+
+
+
+
+
+  const getOngoingEvents = ()=>{
+
+    return events.filter(event=>{
+
+      const now = new Date();
+
+      const start =
+        new Date(event.start_date);
+
+      const end =
+        event.end_date
+        ?
+        new Date(event.end_date)
+        :
+        null;
+
+
+      return (
+        start <= now &&
+        (!end || end >= now)
+      );
+
+    });
+
+  };
+
+
+
+
 
   return {
+
     events,
     loading,
     registerForEvent,
     unregisterFromEvent,
     getUpcomingEvents,
-    getOngoingEvents,
+    getOngoingEvents
+
   };
+
 };
