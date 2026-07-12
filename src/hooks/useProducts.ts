@@ -1,5 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from "@tanstack/react-query";
+import { ref, get } from "firebase/database";
+import { db } from "@/firebase";
 
 export interface Product {
   id: string;
@@ -33,40 +34,47 @@ export interface PaymentPlan {
 
 export const useProducts = () => {
   const { data: products, isLoading: isLoadingProducts } = useQuery({
-    queryKey: ['products'],
+    queryKey: ["products"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .eq('is_active', true)
-        .order('price', { ascending: true });
+      const snapshot = await get(ref(db, "products"));
 
-      if (error) throw error;
-      return data as Product[];
+      if (!snapshot.exists()) return [];
+
+      return Object.entries(snapshot.val()).map(([id, value]: any) => ({
+        id,
+        ...value,
+      })) as Product[];
     },
   });
 
   const { data: plans, isLoading: isLoadingPlans } = useQuery({
-    queryKey: ['payment-plans'],
+    queryKey: ["payment-plans"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('payment_plans')
-        .select('*')
-        .eq('is_active', true)
-        .order('amount', { ascending: true });
+      const snapshot = await get(ref(db, "payment_plans"));
 
-      if (error) throw error;
-      return data as PaymentPlan[];
+      if (!snapshot.exists()) return [];
+
+      return Object.entries(snapshot.val()).map(([id, value]: any) => ({
+        id,
+        ...value,
+      })) as PaymentPlan[];
     },
   });
 
-  const getProductsByCategory = (category: string) => {
-    return products?.filter(p => p.category === category) || [];
-  };
+  const activeProducts = (products || [])
+    .filter((p) => p.is_active)
+    .sort((a, b) => a.price - b.price);
+
+  const activePlans = (plans || [])
+    .filter((p) => p.is_active)
+    .sort((a, b) => a.amount - b.amount);
+
+  const getProductsByCategory = (category: string) =>
+    activeProducts.filter((p) => p.category === category);
 
   return {
-    products: products || [],
-    plans: plans || [],
+    products: activeProducts,
+    plans: activePlans,
     isLoading: isLoadingProducts || isLoadingPlans,
     getProductsByCategory,
   };
